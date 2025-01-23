@@ -26,6 +26,15 @@ exports.handler = async (event, context) => {
   // Enable AWS Lambda context callbackWaitsForEmptyEventLoop
   context.callbackWaitsForEmptyEventLoop = false;
   
+  // Define cleanup function at handler scope
+  const cleanup = async () => {
+    try {
+      await openai.closeConnection?.();
+    } catch (cleanupError) {
+      console.error('Cleanup error:', cleanupError);
+    }
+  };
+
   try {
     const now = new Date();
     const currentHour = now.getHours();
@@ -71,17 +80,6 @@ exports.handler = async (event, context) => {
       console.log(`Posted ${tweet.category} tweet`);
     }
 
-    // Cleanup
-    const cleanup = async () => {
-      try {
-        // Close any open connections or resources
-        await openai.closeConnection?.(); // if available in future OpenAI SDK versions
-        // Free up any other resources
-      } catch (cleanupError) {
-        console.error('Cleanup error:', cleanupError);
-      }
-    };
-
     // Ensure cleanup runs before Lambda ends
     context.on('beforeExit', cleanup);
 
@@ -90,7 +88,6 @@ exports.handler = async (event, context) => {
     return result;
   } catch (error) {
     console.error('Error:', error);
-    // Attempt cleanup even on error
     await cleanup();
     throw error; // Re-throw to maintain Lambda error handling
   }
