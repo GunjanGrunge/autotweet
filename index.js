@@ -78,12 +78,31 @@ exports.handler = async (event, context) => {
                  scheduledTime.getMinutes() === currentMinute;
         });
 
+        // Post due tweets
         for (const tweet of tweetsDue) {
           await twitter.v2.tweet(tweet.content);
           console.log(`Posted ${tweet.category} tweet`);
         }
 
-        return { status: 'Success', tweetsPosted: tweetsDue.length };
+        // Check if this was the last tweet of the day
+        const remainingTweets = tweetsData.scheduledTweets.filter(tweet => {
+          const scheduledTime = new Date(tweet.scheduledTime);
+          const now = new Date();
+          return scheduledTime > now;
+        });
+
+        if (remainingTweets.length === 0) {
+          console.log('All tweets for today completed. Cleaning up...');
+          // Delete the tweets.json file
+          fs.unlinkSync('/tmp/tweets.json');
+          console.log('Cleaned up tweets.json. Ready for next day at 9 AM.');
+        }
+
+        return { 
+          status: 'Success', 
+          tweetsPosted: tweetsDue.length,
+          remainingTweets: remainingTweets.length 
+        };
       } else {
         console.log('No tweets.json file found. Waiting for 9 AM to generate tweets.');
         return { status: 'Success', message: 'No tweets scheduled yet' };
