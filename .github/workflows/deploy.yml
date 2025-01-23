@@ -1,0 +1,54 @@
+name: Deploy Lambda
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '18.x'    # Updated to Node.js 18.x
+          
+      - name: Install dependencies
+        run: npm install
+        
+      - name: Create deployment package
+        run: |
+          zip -r function.zip ./* -x '*.git*'
+          
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - name: Deploy to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name auto-tweet \
+            --zip-file fileb://function.zip
+
+      - name: Create CloudWatch Event Rule
+        run: |
+          aws events put-rule \
+            --name "AutoTweetSchedule" \
+            --schedule-expression "rate(1 minute)" \
+            --state ENABLED
+          
+          aws lambda add-permission \
+            --function-name auto-tweet \
+            --statement-id "AllowEventBridgeInvoke" \
+            --action 'lambda:InvokeFunction' \
+            --principal events.amazonaws.com \
+            --source-arn $(aws events describe-rule --name "AutoTweetSchedule" --query 'Arn' --output text)
+          
+          aws events put-targets \
+            --rule "AutoTweetSchedule" \
+            --targets "Id"="1","Arn"="$(aws lambda get-function --function-name auto-tweet --query 'Configuration.FunctionArn' --output text)"
