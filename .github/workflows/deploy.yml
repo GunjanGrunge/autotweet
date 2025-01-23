@@ -51,11 +51,19 @@ jobs:
 
       - name: Create CloudWatch Event Rule
         run: |
+          # Create or update the rule
           aws events put-rule \
             --name "AutoTweetSchedule" \
             --schedule-expression "rate(1 minute)" \
             --state ENABLED
+
+          # Remove existing permission if it exists
+          aws lambda remove-permission \
+            --function-name auto-tweet \
+            --statement-id "AllowEventBridgeInvoke" || true
           
+          # Add new permission
+          sleep 5  # Wait for removal to propagate
           aws lambda add-permission \
             --function-name auto-tweet \
             --statement-id "AllowEventBridgeInvoke" \
@@ -63,6 +71,7 @@ jobs:
             --principal events.amazonaws.com \
             --source-arn $(aws events describe-rule --name "AutoTweetSchedule" --query 'Arn' --output text)
           
+          # Update the target
           aws events put-targets \
             --rule "AutoTweetSchedule" \
             --targets "Id"="1","Arn"="$(aws lambda get-function --function-name auto-tweet --query 'Configuration.FunctionArn' --output text)"
