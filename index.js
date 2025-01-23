@@ -68,16 +68,29 @@ exports.handler = async (event, context) => {
     }
 
     // Post scheduled tweets
-    const tweetsData = JSON.parse(fs.readFileSync('/tmp/tweets.json', 'utf-8'));
-    const tweetsDue = tweetsData.scheduledTweets.filter(tweet => {
-      const scheduledTime = new Date(tweet.scheduledTime);
-      return scheduledTime.getHours() === currentHour && 
-             scheduledTime.getMinutes() === currentMinute;
-    });
+    try {
+      // Check if tweets.json exists
+      if (fs.existsSync('/tmp/tweets.json')) {
+        const tweetsData = JSON.parse(fs.readFileSync('/tmp/tweets.json', 'utf-8'));
+        const tweetsDue = tweetsData.scheduledTweets.filter(tweet => {
+          const scheduledTime = new Date(tweet.scheduledTime);
+          return scheduledTime.getHours() === currentHour && 
+                 scheduledTime.getMinutes() === currentMinute;
+        });
 
-    for (const tweet of tweetsDue) {
-      await twitter.v2.tweet(tweet.content);
-      console.log(`Posted ${tweet.category} tweet`);
+        for (const tweet of tweetsDue) {
+          await twitter.v2.tweet(tweet.content);
+          console.log(`Posted ${tweet.category} tweet`);
+        }
+
+        return { status: 'Success', tweetsPosted: tweetsDue.length };
+      } else {
+        console.log('No tweets.json file found. Waiting for 9 AM to generate tweets.');
+        return { status: 'Success', message: 'No tweets scheduled yet' };
+      }
+    } catch (fileError) {
+      console.error('Error reading or processing tweets:', fileError);
+      return { status: 'Error', message: 'Failed to process scheduled tweets' };
     }
 
     // Ensure cleanup runs before Lambda ends
