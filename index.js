@@ -36,12 +36,18 @@ exports.handler = async (event, context) => {
   };
 
   try {
+    // Get current time in IST
     const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
+    const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
+    const istTime = new Date(now.getTime() + istOffset);
+    const currentHour = istTime.getHours();
+    const currentMinute = istTime.getMinutes();
 
-    // Generate tweets at 9 AM
-    if (currentHour === 9 && currentMinute === 0) {
+    console.log(`Current IST time: ${istTime.toISOString()}, Hour: ${currentHour}, Minute: ${currentMinute}`);
+
+    // Generate tweets at 9:30 AM IST
+    if (currentHour === 9 && currentMinute === 30) {
+      console.log('Starting tweet generation for today...');
       const tweets = [];
       const shuffledCategories = [...categories, ...categories].sort(() => Math.random() - 0.5);
       

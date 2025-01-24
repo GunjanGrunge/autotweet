@@ -54,7 +54,7 @@ jobs:
           # Create or update the rule
           aws events put-rule \
             --name "AutoTweetSchedule" \
-            --schedule-expression "rate(1 minute)" \
+            --schedule-expression "cron(* 4 * * ? *)" \
             --state ENABLED
 
           # Remove existing permission if it exists
