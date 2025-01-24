@@ -63,14 +63,19 @@ exports.handler = async (event, context) => {
 
     console.log(`Current IST time: ${istTime.toISOString()}, Hour: ${currentHour}, Minute: ${currentMinute}`);
 
-    // Generate tweets at 9:30 AM IST
-    if (currentHour === 9 && currentMinute === 30) {
-      console.log('Starting tweet generation for today...');
+    // Generate tweets at 9:30 AM IST or within a 2-minute window
+    if ((currentHour === 9 && currentMinute >= 30 && currentMinute <= 32) && !fs.existsSync('/tmp/tweets.json')) {
+      console.log('Starting tweet generation for today at 9:30 AM IST...');
       const tweets = [];
       const shuffledCategories = [...categories, ...categories].sort(() => Math.random() - 0.5);
       
+      // Adjust scheduling to use IST times
       for (let i = 0; i < 10; i++) {
-        const hour = i < 5 ? 9 + i : 17 + (i - 5);
+        const hour = i < 5 ? 10 + i : 17 + (i - 5); // Start from 10 AM IST
+        const minute = Math.floor(Math.random() * 60);
+        const tweetTime = new Date(istTime);
+        tweetTime.setHours(hour, minute, 0, 0);
+        
         const response = await openai.chat.completions.create({
           model: "gpt-3.5-turbo",
           messages: [{ role: "user", content: prompts[shuffledCategories[i]] }],
@@ -79,8 +84,10 @@ exports.handler = async (event, context) => {
         tweets.push({
           category: shuffledCategories[i],
           content: response.choices[0].message.content,
-          scheduledTime: new Date(now.setHours(hour, Math.floor(Math.random() * 60), 0, 0))
+          scheduledTime: tweetTime.toISOString()
         });
+
+        console.log(`Scheduled ${shuffledCategories[i]} tweet for ${tweetTime.toISOString()}`);
       }
 
       // Add debug logging for generated tweets
@@ -97,15 +104,16 @@ exports.handler = async (event, context) => {
       return { status: 'Tweets generated' };
     }
 
-    // Post scheduled tweets
+    // Post scheduled tweets with IST time comparison
     try {
       // Check if tweets.json exists
       if (fs.existsSync('/tmp/tweets.json')) {
         const tweetsData = JSON.parse(fs.readFileSync('/tmp/tweets.json', 'utf-8'));
         const tweetsDue = tweetsData.scheduledTweets.filter(tweet => {
           const scheduledTime = new Date(tweet.scheduledTime);
-          return scheduledTime.getHours() === currentHour && 
-                 scheduledTime.getMinutes() === currentMinute;
+          const scheduledIST = new Date(scheduledTime.getTime() + istOffset);
+          return scheduledIST.getHours() === currentHour && 
+                 scheduledIST.getMinutes() === currentMinute;
         });
 
         // Add debug logging for tweets due

@@ -51,10 +51,10 @@ jobs:
 
       - name: Create CloudWatch Event Rule
         run: |
-          # Create or update the rule
+          # Create or update the rule with precise timing
           aws events put-rule \
             --name "AutoTweetSchedule" \
-            --schedule-expression "cron(* 4 * * ? *)" \
+            --schedule-expression "cron(30 4 * * ? *)" \
             --state ENABLED
 
           # Remove existing permission if it exists
