@@ -22,6 +22,18 @@ const prompts = {
   GEETA: "Provide a concise insight from the Bhagavad Gita that encapsulates wisdom about life, ensuring it fits within 280 characters."
 };
 
+// Add Twitter client verification
+const verifyTwitterCredentials = async () => {
+  try {
+    const result = await twitter.v2.me();
+    console.log('Twitter credentials verified:', result.data);
+    return true;
+  } catch (error) {
+    console.error('Twitter credentials verification failed:', error);
+    return false;
+  }
+};
+
 exports.handler = async (event, context) => {
   // Enable AWS Lambda context callbackWaitsForEmptyEventLoop
   context.callbackWaitsForEmptyEventLoop = false;
@@ -36,6 +48,12 @@ exports.handler = async (event, context) => {
   };
 
   try {
+    // Verify Twitter credentials first
+    const isTwitterValid = await verifyTwitterCredentials();
+    if (!isTwitterValid) {
+      throw new Error('Twitter credentials are invalid');
+    }
+
     // Get current time in IST
     const now = new Date();
     const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
@@ -65,6 +83,12 @@ exports.handler = async (event, context) => {
         });
       }
 
+      // Add debug logging for generated tweets
+      console.log('Generated tweets:', tweets.map(t => ({
+        category: t.category,
+        scheduledTime: t.scheduledTime
+      })));
+
       await fs.writeFileSync('/tmp/tweets.json', JSON.stringify({ 
         scheduledTweets: tweets,
         lastUpdated: now.toISOString()
@@ -84,10 +108,22 @@ exports.handler = async (event, context) => {
                  scheduledTime.getMinutes() === currentMinute;
         });
 
+        // Add debug logging for tweets due
+        console.log('Found tweets due:', tweetsDue.map(t => ({
+          category: t.category,
+          content: t.content.substring(0, 30) + '...',
+          scheduledTime: t.scheduledTime
+        })));
+
         // Post due tweets
         for (const tweet of tweetsDue) {
-          await twitter.v2.tweet(tweet.content);
-          console.log(`Posted ${tweet.category} tweet`);
+          try {
+            const postedTweet = await twitter.v2.tweet(tweet.content);
+            console.log(`Successfully posted ${tweet.category} tweet:`, postedTweet.data);
+          } catch (tweetError) {
+            console.error(`Failed to post ${tweet.category} tweet:`, tweetError);
+            throw tweetError;
+          }
         }
 
         // Check if this was the last tweet of the day
