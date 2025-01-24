@@ -34,6 +34,12 @@ const verifyTwitterCredentials = async () => {
   }
 };
 
+// Add utility function for IST time conversion
+const getISTTime = (date) => {
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  return new Date(date.getTime() + istOffset);
+};
+
 exports.handler = async (event, context) => {
   // Enable AWS Lambda context callbackWaitsForEmptyEventLoop
   context.callbackWaitsForEmptyEventLoop = false;
@@ -90,6 +96,13 @@ exports.handler = async (event, context) => {
         console.log(`Scheduled ${shuffledCategories[i]} tweet for ${tweetTime.toISOString()}`);
       }
 
+      // Enhanced logging with IST times
+      console.log('Generated tweets schedule (IST):');
+      tweets.forEach(tweet => {
+        const istScheduledTime = getISTTime(new Date(tweet.scheduledTime));
+        console.log(`${tweet.category}: ${istScheduledTime.toLocaleTimeString('en-IN')} IST`);
+      });
+
       // Add debug logging for generated tweets
       console.log('Generated tweets:', tweets.map(t => ({
         category: t.category,
@@ -115,6 +128,8 @@ exports.handler = async (event, context) => {
           return scheduledIST.getHours() === currentHour && 
                  scheduledIST.getMinutes() === currentMinute;
         });
+
+        console.log(`Found ${tweetsDue.length} tweets to post at ${currentHour}:${currentMinute} IST`);
 
         // Add debug logging for tweets due
         console.log('Found tweets due:', tweetsDue.map(t => ({
