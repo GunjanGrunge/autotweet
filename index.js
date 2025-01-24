@@ -63,8 +63,8 @@ exports.handler = async (event, context) => {
 
     console.log(`Current IST time: ${istTime.toISOString()}, Hour: ${currentHour}, Minute: ${currentMinute}`);
 
-    // Generate tweets at 9:30 AM IST or within a 2-minute window
-    if ((currentHour === 9 && currentMinute >= 30 && currentMinute <= 32) && !fs.existsSync('/tmp/tweets.json')) {
+    // Check for force generate flag or regular schedule
+    if (event.forceGenerate || (currentHour === 9 && currentMinute >= 30 && currentMinute <= 32)) {
       console.log('Starting tweet generation for today at 9:30 AM IST...');
       const tweets = [];
       const shuffledCategories = [...categories, ...categories].sort(() => Math.random() - 0.5);
