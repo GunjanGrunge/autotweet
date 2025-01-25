@@ -1,5 +1,5 @@
 # AutoTweet
-<iframe src="https://github.com/sponsors/GunjanGrunge/button" title="Sponsor GunjanGrunge" height="32" width="114" style="border: 0; border-radius: 6px;"></iframe>
+
 ## CloudShell Usage
 
 1. Open AWS CloudShell in your browser
