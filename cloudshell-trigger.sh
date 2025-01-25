@@ -1,6 +1,6 @@
 #!/bin/bash
 
-FUNCTION_NAME="AutoTweet"  # Replace with your Lambda function name
+FUNCTION_NAME="auto-tweet"  # Updated to exact Lambda function name
 REGION="ap-south-1"        # Replace with your AWS region
 
 function invoke_lambda() {
@@ -42,9 +42,9 @@ function view_status() {
 
     echo -e "\nChecking CloudWatch Logs (last 5 minutes)..."
     aws logs get-log-events \
-        --log-group-name "/aws/lambda/auto-tweet" \
+        --log-group-name "/aws/lambda/auto-tweet" \  # Updated log group name
         --log-stream-name $(aws logs describe-log-streams \
-            --log-group-name "/aws/lambda/auto-tweet" \
+            --log-group-name "/aws/lambda/auto-tweet" \  # Updated log group name
             --order-by LastEventTime \
             --descending \
             --limit 1 \
