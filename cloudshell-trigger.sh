@@ -36,13 +36,40 @@ function invoke_lambda() {
     rm response.json
 }
 
+function view_status() {
+    echo "Reading tweets.json..."
+    cat ./tweets.json | jq '.'
+
+    echo -e "\nChecking CloudWatch Logs (last 5 minutes)..."
+    aws logs get-log-events \
+        --log-group-name "/aws/lambda/auto-tweet" \
+        --log-stream-name $(aws logs describe-log-streams \
+            --log-group-name "/aws/lambda/auto-tweet" \
+            --order-by LastEventTime \
+            --descending \
+            --limit 1 \
+            --query 'logStreams[0].logStreamName' \
+            --output text) \
+        --start-time $(( $(date +%s) - 300 ))000 \
+        --query 'events[*].message' \
+        --output text
+}
+
 # Show usage if no arguments provided
 if [ $# -eq 0 ]; then
-    echo "Usage: ./cloudshell-trigger.sh [generate|post|both]"
+    echo "Usage: ./cloudshell-trigger.sh [generate|post|both|status]"
     echo "  generate - Generate new tweets for today"
     echo "  post    - Post the next scheduled tweet"
     echo "  both    - Generate and post tweets"
+    echo "  status  - View scheduled tweets and recent logs"
     exit 1
 fi
 
-invoke_lambda $1
+case $1 in
+    "status")
+        view_status
+        ;;
+    *)
+        invoke_lambda $1
+        ;;
+esac
