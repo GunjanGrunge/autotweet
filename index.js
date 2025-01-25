@@ -41,43 +41,34 @@ const getISTTime = (date) => {
 };
 
 exports.handler = async (event, context) => {
-  // Enable AWS Lambda context callbackWaitsForEmptyEventLoop
   context.callbackWaitsForEmptyEventLoop = false;
   
-  // Define cleanup function at handler scope
-  const cleanup = async () => {
-    try {
-      await openai.closeConnection?.();
-    } catch (cleanupError) {
-      console.error('Cleanup error:', cleanupError);
-    }
-  };
-
   try {
-    // Verify Twitter credentials first
     const isTwitterValid = await verifyTwitterCredentials();
     if (!isTwitterValid) {
       throw new Error('Twitter credentials are invalid');
     }
 
-    // Get current time in IST
     const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
-    const istTime = new Date(now.getTime() + istOffset);
+    const istTime = getISTTime(now);
     const currentHour = istTime.getHours();
     const currentMinute = istTime.getMinutes();
 
     console.log(`Current IST time: ${istTime.toISOString()}, Hour: ${currentHour}, Minute: ${currentMinute}`);
 
-    // Check for force generate flag or regular schedule
-    if (event.forceGenerate || (currentHour === 9 && currentMinute >= 30 && currentMinute <= 32)) {
-      console.log('Starting tweet generation for today at 9:30 AM IST...');
+    // Read existing tweets.json
+    const tweetsFilePath = './tweets.json';
+    let tweetsData = JSON.parse(fs.readFileSync(tweetsFilePath, 'utf-8'));
+
+    // Check if it's generation time (9:30 AM IST) or forced generation
+    if (event.forceGenerate || (currentHour === 9 && currentMinute === 30)) {
+      console.log('Generating new tweets for today...');
       const tweets = [];
       const shuffledCategories = [...categories, ...categories].sort(() => Math.random() - 0.5);
       
-      // Adjust scheduling to use IST times
+      // Generate tweets for today
       for (let i = 0; i < 10; i++) {
-        const hour = i < 5 ? 10 + i : 17 + (i - 5); // Start from 10 AM IST
+        const hour = i < 5 ? 10 + i : 17 + (i - 5);
         const minute = Math.floor(Math.random() * 60);
         const tweetTime = new Date(istTime);
         tweetTime.setHours(hour, minute, 0, 0);
@@ -92,100 +83,57 @@ exports.handler = async (event, context) => {
           content: response.choices[0].message.content,
           scheduledTime: tweetTime.toISOString()
         });
-
-        console.log(`Scheduled ${shuffledCategories[i]} tweet for ${tweetTime.toISOString()}`);
       }
 
-      // Enhanced logging with IST times
-      console.log('Generated tweets schedule (IST):');
-      tweets.forEach(tweet => {
-        const istScheduledTime = getISTTime(new Date(tweet.scheduledTime));
-        console.log(`${tweet.category}: ${istScheduledTime.toLocaleTimeString('en-IN')} IST`);
-      });
-
-      // Add debug logging for generated tweets
-      console.log('Generated tweets:', tweets.map(t => ({
-        category: t.category,
-        scheduledTime: t.scheduledTime
-      })));
-
-      await fs.writeFileSync('/tmp/tweets.json', JSON.stringify({ 
+      // Save new schedule
+      tweetsData = {
         scheduledTweets: tweets,
         lastUpdated: now.toISOString()
-      }));
-
-      return { status: 'Tweets generated' };
+      };
+      fs.writeFileSync(tweetsFilePath, JSON.stringify(tweetsData, null, 2));
+      
+      return { status: 'Tweets generated and scheduled' };
     }
 
-    // Post scheduled tweets with IST time comparison
-    try {
-      // Check if tweets.json exists
-      if (fs.existsSync('/tmp/tweets.json')) {
-        const tweetsData = JSON.parse(fs.readFileSync('/tmp/tweets.json', 'utf-8'));
-        const tweetsDue = tweetsData.scheduledTweets.filter(tweet => {
-          const scheduledTime = new Date(tweet.scheduledTime);
-          const scheduledIST = new Date(scheduledTime.getTime() + istOffset);
-          return scheduledIST.getHours() === currentHour && 
-                 scheduledIST.getMinutes() === currentMinute;
-        });
+    // Check for tweets that need to be posted
+    const tweetsDue = tweetsData.scheduledTweets.filter(tweet => {
+      const scheduledTime = new Date(tweet.scheduledTime);
+      const scheduledIST = getISTTime(scheduledTime);
+      return scheduledIST.getHours() === currentHour && 
+             scheduledIST.getMinutes() === currentMinute;
+    });
 
-        console.log(`Found ${tweetsDue.length} tweets to post at ${currentHour}:${currentMinute} IST`);
+    if (tweetsDue.length > 0 || event.manualPost) {
+      const tweetsToPost = event.manualPost ? 
+        [tweetsData.scheduledTweets[0]] : 
+        tweetsDue;
 
-        // Add debug logging for tweets due
-        console.log('Found tweets due:', tweetsDue.map(t => ({
-          category: t.category,
-          content: t.content.substring(0, 30) + '...',
-          scheduledTime: t.scheduledTime
-        })));
-
-        // Post due tweets
-        for (const tweet of tweetsDue) {
-          try {
-            const postedTweet = await twitter.v2.tweet(tweet.content);
-            console.log(`Successfully posted ${tweet.category} tweet:`, postedTweet.data);
-          } catch (tweetError) {
-            console.error(`Failed to post ${tweet.category} tweet:`, tweetError);
-            throw tweetError;
-          }
-        }
-
-        // Check if this was the last tweet of the day
-        const remainingTweets = tweetsData.scheduledTweets.filter(tweet => {
-          const scheduledTime = new Date(tweet.scheduledTime);
-          const now = new Date();
-          return scheduledTime > now;
-        });
-
-        if (remainingTweets.length === 0) {
-          console.log('All tweets for today completed. Cleaning up...');
-          // Delete the tweets.json file
-          fs.unlinkSync('/tmp/tweets.json');
-          console.log('Cleaned up tweets.json. Ready for next day at 9 AM.');
-        }
-
-        return { 
-          status: 'Success', 
-          tweetsPosted: tweetsDue.length,
-          remainingTweets: remainingTweets.length 
-        };
-      } else {
-        console.log('No tweets.json file found. Waiting for 9 AM to generate tweets.');
-        return { status: 'Success', message: 'No tweets scheduled yet' };
+      for (const tweet of tweetsToPost) {
+        const postedTweet = await twitter.v2.tweet(tweet.content);
+        console.log(`Posted ${tweet.category} tweet:`, postedTweet.data);
+        
+        // Remove posted tweet from schedule
+        tweetsData.scheduledTweets = tweetsData.scheduledTweets.filter(t => 
+          t.scheduledTime !== tweet.scheduledTime
+        );
       }
-    } catch (fileError) {
-      console.error('Error reading or processing tweets:', fileError);
-      return { status: 'Error', message: 'Failed to process scheduled tweets' };
+
+      // Update tweets.json
+      fs.writeFileSync(tweetsFilePath, JSON.stringify(tweetsData, null, 2));
+      
+      return { 
+        status: 'Success', 
+        tweetsPosted: tweetsToPost.length,
+        remainingTweets: tweetsData.scheduledTweets.length
+      };
     }
 
-    // Ensure cleanup runs before Lambda ends
-    context.on('beforeExit', cleanup);
-
-    const result = { status: 'Success', tweetsPosted: tweetsDue.length };
-    await cleanup();
-    return result;
+    return { 
+      status: 'No action needed',
+      remainingTweets: tweetsData.scheduledTweets.length
+    };
   } catch (error) {
     console.error('Error:', error);
-    await cleanup();
-    throw error; // Re-throw to maintain Lambda error handling
+    throw error;
   }
 };

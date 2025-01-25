@@ -3,6 +3,7 @@ name: Deploy Lambda
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:    # Added for manual triggering
 
 jobs:
   deploy:
@@ -28,10 +29,8 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
-        
-
           
-      - name: Deploy to Lambda
+      - name: Deploy to Lambda and Setup CloudShell
         run: |
           # Update function code
           aws lambda update-function-code \
@@ -49,29 +48,71 @@ jobs:
               OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
             }"
 
+          # Add CloudShell setup
+          echo "Setting up CloudShell trigger..."
+          aws cloudshell upload-file \
+            --path ./cloudshell-trigger.sh \
+            --name cloudshell-trigger.sh \
+            || echo "CloudShell upload attempted"
+
       - name: Create CloudWatch Event Rule
         run: |
-          # Create or update the rule with precise timing
-          aws events put-rule \
-            --name "AutoTweetSchedule" \
-            --schedule-expression "cron(30 4 * * ? *)" \
-            --state ENABLED
-
-          # Remove existing permission if it exists
+          # Clean up existing rules and targets
+          echo "Cleaning up existing rules..."
+          
+          # Remove existing AutoTweetSchedule rule if it exists
+          aws events remove-targets --rule "AutoTweetSchedule" --ids "1" || true
+          aws events delete-rule --name "AutoTweetSchedule" || true
+          
+          # Remove existing GenerateTweetsSchedule rule if it exists
+          aws events remove-targets --rule "GenerateTweetsSchedule" --ids "1" || true
+          aws events delete-rule --name "GenerateTweetsSchedule" || true
+          
+          # Remove existing PostTweetsSchedule rule if it exists
+          aws events remove-targets --rule "PostTweetsSchedule" --ids "1" || true
+          aws events delete-rule --name "PostTweetsSchedule" || true
+          
+          # Remove existing Lambda permissions
           aws lambda remove-permission \
             --function-name auto-tweet \
             --statement-id "AllowEventBridgeInvoke" || true
-          
-          # Add new permission
-          sleep 5  # Wait for removal to propagate
-          aws lambda add-permission \
+          aws lambda remove-permission \
             --function-name auto-tweet \
-            --statement-id "AllowEventBridgeInvoke" \
-            --action 'lambda:InvokeFunction' \
-            --principal events.amazonaws.com \
-            --source-arn $(aws events describe-rule --name "AutoTweetSchedule" --query 'Arn' --output text)
+            --statement-id "AllowGenerateTweetsScheduleInvoke" || true
+          aws lambda remove-permission \
+            --function-name auto-tweet \
+            --statement-id "AllowPostTweetsScheduleInvoke" || true
           
-          # Update the target
-          aws events put-targets \
-            --rule "AutoTweetSchedule" \
-            --targets "Id"="1","Arn"="$(aws lambda get-function --function-name auto-tweet --query 'Configuration.FunctionArn' --output text)"
+          echo "Setting up new rules..."
+          
+          # Create new rules
+          # Create rules for tweet generation (9:30 AM IST) and tweet posting (every minute)
+          aws events put-rule \
+            --name "GenerateTweetsSchedule" \
+            --schedule-expression "cron(30 4 * * ? *)" \
+            --state ENABLED
+
+          aws events put-rule \
+            --name "PostTweetsSchedule" \
+            --schedule-expression "rate(1 minute)" \
+            --state ENABLED
+
+          # Setup permissions for both rules
+          for RULE in "GenerateTweetsSchedule" "PostTweetsSchedule"; do
+            aws lambda remove-permission \
+              --function-name auto-tweet \
+              --statement-id "Allow${RULE}Invoke" || true
+            
+            sleep 2
+            
+            aws lambda add-permission \
+              --function-name auto-tweet \
+              --statement-id "Allow${RULE}Invoke" \
+              --action 'lambda:InvokeFunction' \
+              --principal events.amazonaws.com \
+              --source-arn $(aws events describe-rule --name "$RULE" --query 'Arn' --output text)
+
+            aws events put-targets \
+              --rule "$RULE" \
+              --targets "Id"="1","Arn"="$(aws lambda get-function --function-name auto-tweet --query 'Configuration.FunctionArn' --output text)"
+          done
