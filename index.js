@@ -2,13 +2,6 @@ const { TwitterApi } = require('twitter-api-v2');
 const OpenAI = require('openai');
 const fs = require('fs');
 
-const twitter = new TwitterApi({
-  appKey: process.env.TWITTER_API_KEY,
-  appSecret: process.env.TWITTER_API_SECRET,
-  accessToken: process.env.TWITTER_ACCESS_TOKEN,
-  accessSecret: process.env.TWITTER_ACCESS_SECRET,
-});
-
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -40,8 +33,44 @@ const debugEnvVars = () => {
   });
 };
 
+// Add Twitter client debug logging
+const logTwitterConfig = () => {
+  const credentials = {
+    apiKey: process.env.TWITTER_API_KEY?.length ?? 'missing',
+    apiSecret: process.env.TWITTER_API_SECRET?.length ?? 'missing',
+    accessToken: process.env.TWITTER_ACCESS_TOKEN?.length ?? 'missing',
+    accessSecret: process.env.TWITTER_ACCESS_SECRET?.length ?? 'missing'
+  };
+  console.log('Twitter Credentials Status:', credentials);
+};
+
+// Initialize Twitter client with error handling
+const initializeTwitterClient = () => {
+  try {
+    console.log('Initializing Twitter client...');
+    logTwitterConfig();
+    
+    if (!process.env.TWITTER_API_KEY || 
+        !process.env.TWITTER_API_SECRET || 
+        !process.env.TWITTER_ACCESS_TOKEN || 
+        !process.env.TWITTER_ACCESS_SECRET) {
+      throw new Error('Missing Twitter credentials');
+    }
+
+    return new TwitterApi({
+      appKey: process.env.TWITTER_API_KEY.trim(),
+      appSecret: process.env.TWITTER_API_SECRET.trim(),
+      accessToken: process.env.TWITTER_ACCESS_TOKEN.trim(),
+      accessSecret: process.env.TWITTER_ACCESS_SECRET.trim(),
+    });
+  } catch (error) {
+    console.error('Twitter client initialization error:', error);
+    throw error;
+  }
+};
+
 // Modify Twitter client verification
-const verifyTwitterCredentials = async () => {
+const verifyTwitterCredentials = async (twitter) => {
   try {
     console.log('Initializing Twitter client...');
     debugEnvVars();
@@ -82,7 +111,10 @@ exports.handler = async (event, context) => {
     console.log('Lambda function started');
     console.log('Event:', JSON.stringify(event));
     
-    const isTwitterValid = await verifyTwitterCredentials();
+    // Initialize Twitter client inside handler
+    const twitter = initializeTwitterClient();
+    
+    const isTwitterValid = await verifyTwitterCredentials(twitter);
     if (!isTwitterValid) {
       console.error('Twitter credentials validation failed');
       throw new Error('Twitter credentials validation failed. Check logs for details.');
