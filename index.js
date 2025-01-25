@@ -22,14 +22,48 @@ const prompts = {
   GEETA: "Provide a concise insight from the Bhagavad Gita that encapsulates wisdom about life, ensuring it fits within 280 characters."
 };
 
-// Add Twitter client verification
+// Add debug logging for environment variables
+const debugEnvVars = () => {
+  console.log('Checking environment variables:');
+  const vars = [
+    'TWITTER_API_KEY',
+    'TWITTER_API_SECRET',
+    'TWITTER_ACCESS_TOKEN',
+    'TWITTER_ACCESS_SECRET'
+  ];
+  
+  vars.forEach(v => {
+    console.log(`${v}: ${process.env[v] ? 'Present' : 'Missing'}`);
+    if (process.env[v]) {
+      console.log(`${v} length: ${process.env[v].length}`);
+    }
+  });
+};
+
+// Modify Twitter client verification
 const verifyTwitterCredentials = async () => {
   try {
+    console.log('Initializing Twitter client...');
+    debugEnvVars();
+    
+    // Log Twitter client configuration (safely)
+    console.log('Twitter client config:', {
+      hasAppKey: !!twitter.appKey,
+      hasAppSecret: !!twitter.appSecret,
+      hasAccessToken: !!twitter.accessToken,
+      hasAccessSecret: !!twitter.accessSecret
+    });
+
     const result = await twitter.v2.me();
-    console.log('Twitter credentials verified:', result.data);
+    console.log('Twitter credentials verified successfully:', result.data);
     return true;
   } catch (error) {
-    console.error('Twitter credentials verification failed:', error);
+    console.error('Twitter verification error details:', {
+      message: error.message,
+      code: error.code,
+      data: error.data,
+      stack: error.stack
+    });
     return false;
   }
 };
@@ -40,13 +74,18 @@ const getISTTime = (date) => {
   return new Date(date.getTime() + istOffset);
 };
 
+// Modify the handler's error handling
 exports.handler = async (event, context) => {
   context.callbackWaitsForEmptyEventLoop = false;
   
   try {
+    console.log('Lambda function started');
+    console.log('Event:', JSON.stringify(event));
+    
     const isTwitterValid = await verifyTwitterCredentials();
     if (!isTwitterValid) {
-      throw new Error('Twitter credentials are invalid');
+      console.error('Twitter credentials validation failed');
+      throw new Error('Twitter credentials validation failed. Check logs for details.');
     }
 
     const now = new Date();
